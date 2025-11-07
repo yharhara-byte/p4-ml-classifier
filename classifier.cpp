@@ -254,33 +254,25 @@ static void run_tests(NBClassifier &clf,
 
 int main(int argc, char *argv[])
 {
-  if (argc != 2 && argc != 3)
-  {
-    cout << "Usage: classifier.exe TRAIN_FILE"
-         << " [TEST_FILE]" << endl;
+  if (argc != 2 && argc != 3) {
+    cout << "Usage: classifier.exe TRAIN_FILE [TEST_FILE]\n";
     return 1;
   }
 
-  string train_file = argv[1];
   NBClassifier clf;
+  string train_file = argv[1];
 
-  try
-  {
+  if (argc == 2) {
     clf.train(train_file);
-  }
-  catch (const csvstream_exception &)
-  {
-    return 1;
-  }
-
-  if (argc == 2)
-  {
     clf.print_classes();
     clf.print_params();
-    return 0;
+  } 
+  else {
+    clf.train(train_file);
+    string test_file = argv[2];
+    run_tests(clf, test_file);
   }
 
-  string test_file = argv[2];
-  run_tests(clf, test_file);
   return 0;
 }
+
