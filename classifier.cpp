@@ -1,231 +1,286 @@
+#include "csvstream.hpp"
 #include <iostream>
-#include <string>
 #include <map>
 #include <set>
+#include <string>
 #include <cmath>
 #include <sstream>
-#include "csvstream.hpp"
+#include <iomanip>
 using namespace std;
 
-set<string> split_words(const string &text)
+static string show3(double v)
 {
-  istringstream in(text);
-  set<string> bag;
-  string piece;
-  while (in >> piece) bag.insert(piece);
-  return bag;
+  ostringstream oss;
+  oss.setf(ios::fixed);
+  oss << setprecision(3) << v;
+  return oss.str();
 }
 
-class Classifier
+class NBClassifier
 {
-private:
-  int postCount = 0;
-  set<string> vocab;
+public:
   map<string,int> labelCount;
   map<string,map<string,int>> labelWordHits;
+  set<string> vocab;
   map<string,int> wordHits;
 
-public:
   void train(const string &file)
   {
-    csvstream csv(file);
-    map<string,string> row;
-
-    while (csv >> row)
+    try
     {
-      string tag = row.at("tag");
-      string body = row.at("content");
+      csvstream csv(file);
+      map<string,string> row;
 
-      postCount++;
-      labelCount[tag]++;
+      cout << "training data:\n";
 
-      set<string> bag = split_words(body);
-      for (const auto &term : bag)
+      while (csv >> row)
       {
-        vocab.insert(term);
-        labelWordHits[tag][term]++;
-        wordHits[term]++;
+        string label = row["tag"];
+        string text = row["content"];
+        cout << "  label = " << label
+             << ", content = " << text << "\n";
+
+        labelCount[label]++;
+
+        set<string> words = split_words(text);
+        set<string> seen;
+
+        for (const string &word : words)
+        {
+          if (!seen.count(word))
+          {
+            labelWordHits[label][word]++;
+            vocab.insert(word);
+            wordHits[word]++;
+            seen.insert(word);
+          }
+        }
       }
+
+      cout << "trained on "
+           << total_examples() << " examples\n";
+
+      cout << "vocabulary size = "
+           << vocab.size() << "\n\n";
     }
-  }
-
-  void show_training_data(const string &file) const
-  {
-    csvstream csv(file);
-    map<string,string> row;
-
-    cout << "training data:\n";
-    while (csv >> row)
+    catch (const csvstream_exception &)
     {
-      cout << "  label = " << row.at("tag")
-           << ", content = " << row.at("content") << "\n";
+      cout << "Error opening file: " << file << endl;
+      throw;
     }
-
-    cout << "trained on " << postCount << " examples\n";
-    cout << "vocabulary size = " << vocab.size() << "\n\n";
   }
 
-  void show_classes() const
+  void print_classes() const
   {
     cout << "classes:\n";
-    for (const auto &p : labelCount)
+
+    for (auto &p : labelCount)
     {
-      const string &tag = p.first;
-      double prior = log(double(p.second) / double(postCount));
-      cout << "  " << tag << ", " << p.second
-           << " examples, log-prior = " << prior << "\n";
+      cout << "  " << p.first
+           << ", " << p.second
+           << " examples, log-prior = "
+           << show3(log_prior(p.first)) << "\n";
     }
+
     cout << "\n";
   }
 
-  void show_params() const
+  void print_params() const
   {
     cout << "classifier parameters:\n";
-    for (const auto &outer : labelWordHits)
+
+    for (auto &lp : labelWordHits)
     {
-      const string &tag = outer.first;
-      for (const auto &inner : outer.second)
+      const string &label = lp.first;
+
+      for (auto &wp : lp.second)
       {
-        const string &term = inner.first;
-        int hit = inner.second;
-        double ll = log(double(hit) / double(labelCount.at(tag)));
-        cout << "  " << tag << ":" << term
-             << ", count = " << hit
-             << ", log-likelihood = " << ll << "\n";
+        cout << "  " << label
+             << ":" << wp.first
+             << ", count = " << wp.second
+             << ", log-likelihood = "
+             << show3(log_prob_word(label, wp.first))
+             << "\n";
       }
     }
+
     cout << "\n";
   }
 
-  double log_prior(const string &tag) const
+  string predict(const string &text,
+                 double &bestScore) const
   {
-    return log(double(labelCount.at(tag)) / double(postCount));
-  }
+    set<string> bag = split_words(text);
+    string best;
+    bool first = true;
 
-  double word_ll_for_predict(const string &tag, const string &term) const 
-  {
-    int wordHit = 0;
-
-    auto itLabel = labelWordHits.find(tag);
-    if (itLabel != labelWordHits.end()) 
+    for (auto &lbl : labelCount)
     {
-      auto itTerm = itLabel->second.find(term);
-      if (itTerm != itLabel->second.end()) 
+      const string &label = lbl.first;
+      double score = log_prior(label);
+
+      for (const string &w : vocab)
       {
-        wordHit = itTerm->second;
-      }
-    }
+        double p = prob_word_given_label(label, w);
 
-    int totalHits = 0;
-    for (const auto &p : labelWordHits.at(tag)) 
-    {
-      totalHits += p.second;
-    }
-
-    double prob = (wordHit + 1.0) / (totalHits + double(vocab.size()));
-
-    return log10(prob); 
-  }
-
-  string guess_label(const string &body, double &bestScore) const
-  {
-    set<string> bag = split_words(body);
-    string choice;
-    bool firstPick = true;
-
-    for (const auto &pair : labelCount)
-    {
-      const string &tag = pair.first;
-      double score = log_prior(tag);
-
-      for (const auto &term : bag)
-      {
-        score += word_ll_for_predict(tag, term);
+        if (bag.count(w))
+          score += log(p);
+        else
+          score += log(1.0 - p);
       }
 
-      if (firstPick ||
-          score > bestScore ||
-          (fabs(score - bestScore) < 1e-9 && tag < choice))
+      if (first || score > bestScore ||
+          (fabs(score - bestScore) < 1e-9 &&
+           label < best))
       {
         bestScore = score;
-        choice = tag;
-        firstPick = false;
+        best = label;
+        first = false;
       }
     }
 
-    return choice;
+    return best;
+  }
+
+private:
+  static set<string> split_words(const string &line)
+  {
+    set<string> words;
+    string w;
+
+    for (char c : line)
+    {
+      if (isalpha(c) || isdigit(c))
+        w += tolower(c);
+      else if (!w.empty())
+      {
+        words.insert(w);
+        w.clear();
+      }
+    }
+
+    if (!w.empty()) words.insert(w);
+    return words;
+  }
+
+  int total_examples() const
+  {
+    int n = 0;
+    for (auto &p : labelCount) n += p.second;
+    return n;
+  }
+
+  double log_prior(const string &label) const
+  {
+    double n = labelCount.at(label);
+    double t = total_examples();
+    return log(n / t);
+  }
+
+  double log_prob_word(const string &label,
+                       const string &word) const
+  {
+    int hits = 0;
+    auto itL = labelWordHits.find(label);
+    if (itL != labelWordHits.end())
+    {
+      auto itW = itL->second.find(word);
+      if (itW != itL->second.end())
+        hits = itW->second;
+    }
+
+    double denom = double(labelCount.at(label));
+    double prob = double(hits) / denom;
+    return log(prob);
+  }
+
+  double prob_word_given_label(const string &label,
+                               const string &word) const
+  {
+    double labelDocs = double(labelCount.at(label));
+    double hit = 0.0;
+
+    auto itL = labelWordHits.find(label);
+    if (itL != labelWordHits.end())
+    {
+      auto itW = itL->second.find(word);
+      if (itW != itL->second.end())
+        hit = double(itW->second);
+    }
+
+    return (hit + 1.0) / (labelDocs + 2.0);
   }
 };
 
-int main(int argc, char* argv[])
+static void run_tests(NBClassifier &clf,
+                      const string &file)
 {
-  cout.precision(3);
-
-  if (argc != 2 && argc != 3)
-  {
-    cout << "Usage: classifier.exe TRAIN_FILE [TEST_FILE]" << endl;
-    return 1;
-  }
-
-  string trainFile = argv[1];
-  string testFile;
-  bool hasTest = argc == 3;
-  if (hasTest) testFile = argv[2];
-
-  Classifier model;
-
   try
   {
-    model.train(trainFile);
-  }
-  catch (const csvstream_exception &)
-  {
-    cout << "Error opening file: " << trainFile << endl;
-    return 1;
-  }
-
-  model.show_training_data(trainFile);
-
-  if (!hasTest)
-  {
-    model.show_classes();
-    model.show_params();
-    return 0;
-  }
-
-  try
-  {
-    csvstream csv(testFile);
+    csvstream csv(file);
     map<string,string> row;
-
     cout << "test data:\n";
-    int right = 0;
-    int total = 0;
+    int correct = 0, total = 0;
 
     while (csv >> row)
     {
-      string correctTag = row.at("tag");
-      string text = row.at("content");
+      string lbl = row["tag"];
+      string txt = row["content"];
       double score = 0.0;
-      string predicted = model.guess_label(text, score);
+      string pred = clf.predict(txt, score);
 
-      cout << "  correct = " << correctTag
-           << ", predicted = " << predicted
-           << ", log-probability score = " << score << "\n";
+      cout << "  correct = " << lbl
+           << ", predicted = " << pred
+           << ", log-probability score = "
+           << round(score * 10.0) / 10.0
+           << "\n";
 
-      cout << "  content = " << text << "\n\n";
+      cout << "  content = "
+           << txt << "\n\n";
 
-      if (predicted == correctTag) right++;
+      if (pred == lbl) correct++;
       total++;
     }
 
-    cout << "performance: " << right
-         << " / " << total
+    cout << "performance: "
+         << correct << " / " << total
          << " posts predicted correctly\n";
   }
   catch (const csvstream_exception &)
   {
-    cout << "Error opening file: " << testFile << endl;
+    cout << "Error opening file: " << file << endl;
+  }
+}
+
+int main(int argc, char *argv[])
+{
+  if (argc != 2 && argc != 3)
+  {
+    cout << "Usage: classifier.exe TRAIN_FILE"
+         << " [TEST_FILE]" << endl;
     return 1;
   }
+
+  string train_file = argv[1];
+  NBClassifier clf;
+
+  try
+  {
+    clf.train(train_file);
+  }
+  catch (const csvstream_exception &)
+  {
+    return 1;
+  }
+
+  if (argc == 2)
+  {
+    clf.print_classes();
+    clf.print_params();
+    return 0;
+  }
+
+  string test_file = argv[2];
+  run_tests(clf, test_file);
+  return 0;
 }
