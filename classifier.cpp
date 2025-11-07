@@ -1,5 +1,4 @@
 #include <iostream>
-#include <iomanip>
 #include <string>
 #include <map>
 #include <set>
@@ -30,17 +29,18 @@ public:
   void train(const string &file)
   {
     csvstream csv(file);
-    map<string,string> line;
+    map<string,string> row;
 
-    while (csv >> line)
+    while (csv >> row)
     {
-      string tag = line["tag"];
-      string body = line["content"];
+      string tag = row.at("tag");
+      string body = row.at("content");
+
       postCount++;
       labelCount[tag]++;
 
       set<string> bag = split_words(body);
-      for (auto &term : bag)
+      for (const auto &term : bag)
       {
         vocab.insert(term);
         labelWordHits[tag][term]++;
@@ -49,49 +49,7 @@ public:
     }
   }
 
-  int total_posts() const { return postCount; }
-  int vocab_size() const { return vocab.size(); }
-
-  double log_prior(const string &tag) const
-  {
-    return log(double(labelCount.at(tag)) / postCount);
-  }
-
-  double log_likelihood(const string &tag, const string &term) const
-  {
-    double count = 0;
-    if (labelWordHits.at(tag).count(term))
-      count = labelWordHits.at(tag).at(term);
-
-    double prob = (count + 1.0) / (labelCount.at(tag) + 2.0);
-    return log(prob);
-  }
-
-  string guess_label(const string &body, double &bestScore) const
-  {
-    set<string> bag = split_words(body);
-    string chosen;
-    bool firstPick = true;
-
-    for (auto &pair : labelCount)
-    {
-      string tag = pair.first;
-      double score = log_prior(tag);
-
-      for (auto &term : bag)
-        score += log_likelihood(tag, term);
-
-      if (firstPick || score > bestScore || (fabs(score - bestScore) < 1e-9 && tag < chosen))
-      {
-        bestScore = score;
-        chosen = tag;
-        firstPick = false;
-      }
-    }
-    return chosen;
-  }
-
-  void show_training_data(const string &file)
+  void show_training_data(const string &file) const
   {
     csvstream csv(file);
     map<string,string> row;
@@ -99,7 +57,8 @@ public:
     cout << "training data:\n";
     while (csv >> row)
     {
-      cout << "  label = " << row["tag"] << ", content = " << row["content"] << "\n";
+      cout << "  label = " << row.at("tag")
+           << ", content = " << row.at("content") << "\n";
     }
 
     cout << "trained on " << postCount << " examples\n";
@@ -109,10 +68,12 @@ public:
   void show_classes() const
   {
     cout << "classes:\n";
-    for (auto &pair : labelCount)
+    for (const auto &p : labelCount)
     {
-      cout << "  " << pair.first << ", " << pair.second << " examples, log-prior = "
-           << fixed << setprecision(3) << log_prior(pair.first) << "\n";
+      const string &tag = p.first;
+      double prior = log(double(p.second) / double(postCount));
+      cout << "  " << tag << ", " << p.second
+           << " examples, log-prior = " << prior << "\n";
     }
     cout << "\n";
   }
@@ -120,16 +81,79 @@ public:
   void show_params() const
   {
     cout << "classifier parameters:\n";
-    for (auto &outer : labelWordHits)
+    for (const auto &outer : labelWordHits)
     {
-      for (auto &inner : outer.second)
+      const string &tag = outer.first;
+      for (const auto &inner : outer.second)
       {
-        cout << "  " << outer.first << ":" << inner.first << ", count = " << inner.second
-             << ", log-likelihood = " << fixed << setprecision(3)
-             << log_likelihood(outer.first, inner.first) << "\n";
+        const string &term = inner.first;
+        int hit = inner.second;
+        double ll = log(double(hit) / double(labelCount.at(tag)));
+        cout << "  " << tag << ":" << term
+             << ", count = " << hit
+             << ", log-likelihood = " << ll << "\n";
       }
     }
     cout << "\n";
+  }
+
+  double log_prior(const string &tag) const
+  {
+    return log(double(labelCount.at(tag)) / double(postCount));
+  }
+
+  double word_ll_for_predict(const string &tag, const string &term) const 
+  {
+    int wordHit = 0;
+
+    auto itLabel = labelWordHits.find(tag);
+    if (itLabel != labelWordHits.end()) 
+    {
+      auto itTerm = itLabel->second.find(term);
+      if (itTerm != itLabel->second.end()) 
+      {
+        wordHit = itTerm->second;
+      }
+    }
+
+    int totalHits = 0;
+    for (const auto &p : labelWordHits.at(tag)) 
+    {
+      totalHits += p.second;
+    }
+
+    double prob = (wordHit + 1.0) / (totalHits + double(vocab.size()));
+
+    return log10(prob); 
+  }
+
+  string guess_label(const string &body, double &bestScore) const
+  {
+    set<string> bag = split_words(body);
+    string choice;
+    bool firstPick = true;
+
+    for (const auto &pair : labelCount)
+    {
+      const string &tag = pair.first;
+      double score = log_prior(tag);
+
+      for (const auto &term : bag)
+      {
+        score += word_ll_for_predict(tag, term);
+      }
+
+      if (firstPick ||
+          score > bestScore ||
+          (fabs(score - bestScore) < 1e-9 && tag < choice))
+      {
+        bestScore = score;
+        choice = tag;
+        firstPick = false;
+      }
+    }
+
+    return choice;
   }
 };
 
@@ -154,7 +178,7 @@ int main(int argc, char* argv[])
   {
     model.train(trainFile);
   }
-  catch (const csvstream_exception &e)
+  catch (const csvstream_exception &)
   {
     cout << "Error opening file: " << trainFile << endl;
     return 1;
@@ -172,29 +196,34 @@ int main(int argc, char* argv[])
   try
   {
     csvstream csv(testFile);
-    map<string,string> post;
+    map<string,string> row;
 
     cout << "test data:\n";
-    int right = 0, total = 0;
+    int right = 0;
+    int total = 0;
 
-    while (csv >> post)
+    while (csv >> row)
     {
-      string correctTag = post["tag"];
-      string text = post["content"];
-      double score;
+      string correctTag = row.at("tag");
+      string text = row.at("content");
+      double score = 0.0;
       string predicted = model.guess_label(text, score);
 
-      cout << "  correct = " << correctTag << ", predicted = " << predicted
+      cout << "  correct = " << correctTag
+           << ", predicted = " << predicted
            << ", log-probability score = " << score << "\n";
+
       cout << "  content = " << text << "\n\n";
 
       if (predicted == correctTag) right++;
       total++;
     }
 
-    cout << "performance: " << right << " / " << total << " posts predicted correctly\n";
+    cout << "performance: " << right
+         << " / " << total
+         << " posts predicted correctly\n";
   }
-  catch (const csvstream_exception &e)
+  catch (const csvstream_exception &)
   {
     cout << "Error opening file: " << testFile << endl;
     return 1;
