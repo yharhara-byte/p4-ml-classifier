@@ -67,10 +67,8 @@ public:
     for (auto &p : labelCount)
     {
       double prior = log(double(p.second) / double(total));
-      ostringstream out;
-      out << fixed << setprecision(3) << prior;
       cout << "  " << p.first << ", " << p.second
-           << " examples, log-prior = " << out.str() << "\n";
+           << " examples, log-prior = " << prior << "\n";
     }
     cout << "\n";
   }
@@ -88,10 +86,8 @@ public:
         double n_label = double(labelCount.at(label));
         double prob = (hits > 0) ? (hits / n_label) : (1.0 / (n_label + 2.0));
         double loglike = log(prob);
-        ostringstream out;
-        out << fixed << setprecision(3) << loglike;
         cout << "  " << label << ":" << word << ", count = " << hits
-             << ", log-likelihood = " << out.str() << "\n";
+             << ", log-likelihood = " << loglike << "\n";
       }
     }
     cout << "\n";
@@ -118,8 +114,7 @@ public:
       const string &label = lbl.first;
       double labelDocs = double(labelCount.at(label));
       double score = log(labelDocs / double(total));
-
-      for (const string &w : vocab)
+      for (const string &w : bag)
       {
         int hits = 0;
         auto itL = labelWordHits.find(label);
@@ -130,12 +125,8 @@ public:
             hits = itW->second;
         }
         double p = (hits > 0) ? (hits / labelDocs) : (1.0 / (labelDocs + 2.0));
-        if (bag.count(w))
-          score += log(p);
-        else
-          score += log(1.0 - p);
+        score += log(p);
       }
-
       if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
@@ -153,24 +144,18 @@ static void run_tests(NBClassifier &clf, const string &file)
   map<string, string> row;
   cout << "test data:\n";
   int correct = 0, total = 0;
-
   while (csv >> row)
   {
     string lbl = row["tag"];
-    string txt = row["content"];
-    double score = 0.0;
-    string pred = clf.predict(txt, score);
-
-    ostringstream score1;
-    score1 << fixed << setprecision(1) << score;
-
-    cout << "  correct = " << lbl << ", predicted = " << pred
-         << ", log-probability score = " << score1.str() << "\n";
-    cout << "  content = " << txt << "\n\n";
-
-    if (pred == lbl)
-      correct++;
-    total++;
+        string txt=row["content"]];
+        double score = 0.0;
+        string pred = clf.predict(txt, score);
+        cout << "  correct = " << lbl << ", predicted = " << pred
+             << ", log-probability score = " << score << "\n";
+        cout << "  content = " << txt << "\n\n";
+        if (pred == lbl)
+          correct++;
+        total++;
   }
   cout << "performance: " << correct << " / " << total
        << " posts predicted correctly\n";
@@ -178,18 +163,16 @@ static void run_tests(NBClassifier &clf, const string &file)
 
 int main(int argc, char *argv[])
 {
-  cout << fixed << setprecision(3);
+  cout.precision(3);
   if (argc != 2 && argc != 3)
   {
     cout << "Usage: classifier.exe TRAIN_FILE [TEST_FILE]\n";
     return 1;
   }
-
   try
   {
     NBClassifier clf;
     string train_file = argv[1];
-
     if (argc == 2)
     {
       clf.train(train_file, true);
@@ -205,7 +188,7 @@ int main(int argc, char *argv[])
   }
   catch (const csvstream_exception &e)
   {
-    cout << "Error opening file: " << e.msg.substr(e.msg.find(": ") + 2) << "\n";
+    cout << e.msg << "\n";
     return 1;
   }
   return 0;
