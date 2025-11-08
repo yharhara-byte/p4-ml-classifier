@@ -118,7 +118,6 @@ public:
       const string &label = lbl.first;
       double labelDocs = double(labelCount.at(label));
       double score = log(labelDocs / double(total));
-
       for (const string &w : vocab)
       {
         int hits = 0;
@@ -135,7 +134,6 @@ public:
         else
           score += log(1.0 - p);
       }
-
       if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
