@@ -29,7 +29,8 @@ public:
       string text = row["content"];
       if (verbose)
       {
-        cout << "  label = " << label << ", content = " << text << "\n";
+        cout << "  label = " << label 
+        << ", content = " << text << "\n";
       }
       labelCount[label]++;
       istringstream in(text);
@@ -86,7 +87,8 @@ public:
         const string &word = wp.first;
         int hits = wp.second;
         double n_label = double(labelCount.at(label));
-        double prob = (hits > 0) ? (hits / n_label) : (1.0 / (n_label + 2.0));
+        double prob = (hits > 0) ? (hits / n_label) 
+                    : (1.0 / (n_label + 2.0));
         double loglike = log(prob);
         ostringstream out;
         out << fixed << setprecision(3) << loglike;
@@ -129,14 +131,16 @@ public:
           if (itW != itL->second.end())
             hits = itW->second;
         }
-        double p = (hits > 0) ? (hits / labelDocs) : (1.0 / (labelDocs + 2.0));
+        double p = (hits > 0) ? (hits / labelDocs) 
+                    : (1.0 / (labelDocs + 2.0));
         if (bag.count(w))
           score += log(p);
         else
           score += log(1.0 - p);
       }
 
-      if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
+      if (first || score > bestScore || 
+          (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
         best = label;
@@ -205,7 +209,8 @@ int main(int argc, char *argv[])
   }
   catch (const csvstream_exception &e)
   {
-    cout << "Error opening file: " << e.msg.substr(e.msg.find(": ") + 2) << "\n";
+    cout << "Error opening file: " <<
+     e.msg.substr(e.msg.find(": ") + 2) << "\n";
     return 1;
   }
   return 0;
