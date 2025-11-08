@@ -106,6 +106,7 @@ public:
       while (in >> w)
         bag.insert(w);
     }
+
     string best;
     bool first = true;
 
@@ -117,9 +118,13 @@ public:
     {
       const string &label = lbl.first;
       double labelDocs = double(labelCount.at(label));
+
       double score = log(labelDocs / double(total));
-      for (const string &w : vocab)
+
+      for (const string &w : bag)
       {
+        if (!vocab.count(w))
+          continue;
         int hits = 0;
         auto itL = labelWordHits.find(label);
         if (itL != labelWordHits.end())
@@ -129,12 +134,11 @@ public:
             hits = itW->second;
         }
         double p = (hits + 1.0) / (labelDocs + 2.0);
-        if (bag.count(w))
-          score += log(p);
-        else
-          score += log(1.0 - p);
+        score += log(p);
       }
-      if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
+
+      if (first || score > bestScore ||
+          (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
         best = label;
