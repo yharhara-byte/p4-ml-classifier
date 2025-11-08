@@ -67,8 +67,10 @@ public:
     for (auto &p : labelCount)
     {
       double prior = log(double(p.second) / double(total));
+      ostringstream out;
+      out << setprecision(3) << prior;
       cout << "  " << p.first << ", " << p.second
-           << " examples, log-prior = " << prior << "\n";
+           << " examples, log-prior = " << out.str() << "\n";
     }
     cout << "\n";
   }
@@ -86,8 +88,10 @@ public:
         double n_label = double(labelCount.at(label));
         double prob = (hits > 0) ? (hits / n_label) : (1.0 / (n_label + 2.0));
         double loglike = log(prob);
+        ostringstream out;
+        out << setprecision(3) << loglike;
         cout << "  " << label << ":" << word << ", count = " << hits
-             << ", log-likelihood = " << loglike << "\n";
+             << ", log-likelihood = " << out.str() << "\n";
       }
     }
     cout << "\n";
@@ -112,8 +116,9 @@ public:
     for (auto &lbl : labelCount)
     {
       const string &label = lbl.first;
-      double n_label = double(labelCount.at(label));
-      double score = log(n_label / double(total));
+      double labelDocs = double(labelCount.at(label));
+      double score = log(labelDocs / double(total));
+
       for (const string &w : vocab)
       {
         int hits = 0;
@@ -124,12 +129,13 @@ public:
           if (itW != itL->second.end())
             hits = itW->second;
         }
-        double p = (hits > 0) ? (hits / n_label) : (1.0 / (n_label + 2.0));
+        double p = (hits > 0) ? (hits / labelDocs) : (1.0 / (labelDocs + 2.0));
         if (bag.count(w))
           score += log(p);
         else
           score += log(1.0 - p);
       }
+
       if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
@@ -153,10 +159,10 @@ static void run_tests(NBClassifier &clf, const string &file)
     string txt = row["content"];
     double score = 0.0;
     string pred = clf.predict(txt, score);
-    cout.setf(ios::fixed);
-    cout << setprecision(1);
+    ostringstream s;
+    s << fixed << setprecision(1) << score;
     cout << "  correct = " << lbl << ", predicted = " << pred
-         << ", log-probability score = " << score << "\n";
+         << ", log-probability score = " << s.str() << "\n";
     cout << "  content = " << txt << "\n\n";
     if (pred == lbl)
       correct++;
@@ -192,8 +198,8 @@ int main(int argc, char *argv[])
   }
   catch (const csvstream_exception &e)
   {
-    size_t k = e.msg.find(": ");
-    string tail = (k == string::npos) ? e.msg : e.msg.substr(k + 2);
+    size_t pos = e.msg.find(": ");
+    string tail = (pos == string::npos) ? e.msg : e.msg.substr(pos + 2);
     cout << "Error opening file: " << tail << "\n";
     return 1;
   }
