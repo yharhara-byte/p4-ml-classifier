@@ -3,9 +3,9 @@
 #include <map>
 #include <set>
 #include <string>
+#include <cmath>
 #include <sstream>
 #include <iomanip>
-#include <cmath>
 using namespace std;
 
 class NBClassifier
