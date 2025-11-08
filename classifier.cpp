@@ -147,15 +147,15 @@ static void run_tests(NBClassifier &clf, const string &file)
   while (csv >> row)
   {
     string lbl = row["tag"];
-        string txt=row["content"]];
-        double score = 0.0;
-        string pred = clf.predict(txt, score);
-        cout << "  correct = " << lbl << ", predicted = " << pred
-             << ", log-probability score = " << score << "\n";
-        cout << "  content = " << txt << "\n\n";
-        if (pred == lbl)
-          correct++;
-        total++;
+    string txt = row["content"];
+    double score = 0.0;
+    string pred = clf.predict(txt, score);
+    cout << "  correct = " << lbl << ", predicted = " << pred
+         << ", log-probability score = " << score << "\n";
+    cout << "  content = " << txt << "\n\n";
+    if (pred == lbl)
+      correct++;
+    total++;
   }
   cout << "performance: " << correct << " / " << total
        << " posts predicted correctly\n";
