@@ -128,7 +128,7 @@ public:
           if (itW != itL->second.end())
             hits = itW->second;
         }
-        double p = (hits > 0) ? (hits / labelDocs) : (1.0 / (labelDocs + 2.0));
+        double p = (hits + 1.0) / (labelDocs + 2.0);
         if (bag.count(w))
           score += log(p);
         else
