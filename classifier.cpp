@@ -17,40 +17,44 @@ private:
   map<string, int> wordHits;
 
 public:
-  void train(const string &file)
+  void train(const string &file, bool verbose)
   {
-    try
-    {
-      csvstream csv(file);
-      map<string, string> row;
+    csvstream csv(file);
+    map<string, string> row;
+    if (verbose)
       cout << "training data:\n";
-      while (csv >> row)
+    while (csv >> row)
+    {
+      string label = row["tag"];
+      string text = row["content"];
+      if (verbose)
       {
-        string label = row["tag"];
-        string text = row["content"];
         cout << "  label = " << label << ", content = " << text << "\n";
-        labelCount[label]++;
-        istringstream source(text);
-        set<string> words;
-        string word;
-        while (source >> word)
-          words.insert(word);
-        for (const string &w : words)
-        {
-          labelWordHits[label][w]++;
-          vocab.insert(w);
-          wordHits[w]++;
-        }
       }
-      int total = 0;
-      for (auto &p : labelCount)
-        total += p.second;
-      cout << "trained on " << total << " examples\n";
+      labelCount[label]++;
+      istringstream in(text);
+      set<string> words;
+      string w;
+      while (in >> w)
+        words.insert(w);
+      for (const string &x : words)
+      {
+        labelWordHits[label][x]++;
+        vocab.insert(x);
+        wordHits[x]++;
+      }
+    }
+    int total = 0;
+    for (auto &p : labelCount)
+      total += p.second;
+    cout << "trained on " << total << " examples\n";
+    if (verbose)
+    {
       cout << "vocabulary size = " << vocab.size() << "\n\n";
     }
-    catch (const csvstream_exception &e)
+    else
     {
-      cout << "Error opening file: " << file << endl;
+      cout << "\n";
     }
   }
 
@@ -65,7 +69,8 @@ public:
       double prior = log(double(p.second) / double(total));
       ostringstream out;
       out << fixed << setprecision(3) << prior;
-      cout << "  " << p.first << ", " << p.second << " examples, log-prior = " << out.str() << "\n";
+      cout << "  " << p.first << ", " << p.second
+           << " examples, log-prior = " << out.str() << "\n";
     }
     cout << "\n";
   }
@@ -81,15 +86,12 @@ public:
         const string &word = wp.first;
         int hits = wp.second;
         double n_label = double(labelCount.at(label));
-        double prob;
-        if (hits > 0)
-          prob = hits / n_label;
-        else
-          prob = 1.0 / (n_label + 2.0);
+        double prob = (hits > 0) ? (hits / n_label) : (1.0 / (n_label + 2.0));
         double loglike = log(prob);
         ostringstream out;
         out << fixed << setprecision(3) << loglike;
-        cout << "  " << label << ":" << word << ", count = " << hits << ", log-likelihood = " << out.str() << "\n";
+        cout << "  " << label << ":" << word << ", count = " << hits
+             << ", log-likelihood = " << out.str() << "\n";
       }
     }
     cout << "\n";
@@ -98,20 +100,25 @@ public:
   string predict(const string &text, double &bestScore) const
   {
     set<string> bag;
-    istringstream in(text);
-    string w;
-    while (in >> w)
-      bag.insert(w);
+    {
+      istringstream in(text);
+      string w;
+      while (in >> w)
+        bag.insert(w);
+    }
     string best;
     bool first = true;
+
+    int total = 0;
+    for (auto &p : labelCount)
+      total += p.second;
+
     for (auto &lbl : labelCount)
     {
       const string &label = lbl.first;
       double labelDocs = double(labelCount.at(label));
-      int total = 0;
-      for (auto &p : labelCount)
-        total += p.second;
       double score = log(labelDocs / double(total));
+
       for (const string &w : vocab)
       {
         int hits = 0;
@@ -122,16 +129,13 @@ public:
           if (itW != itL->second.end())
             hits = itW->second;
         }
-        double p;
-        if (hits > 0)
-          p = hits / labelDocs;
-        else
-          p = 1.0 / (labelDocs + 2.0);
+        double p = (hits > 0) ? (hits / labelDocs) : (1.0 / (labelDocs + 2.0));
         if (bag.count(w))
           score += log(p);
         else
           score += log(1.0 - p);
       }
+
       if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
@@ -143,34 +147,33 @@ public:
   }
 };
 
-void run_tests(NBClassifier &clf, const string &file)
+static void run_tests(NBClassifier &clf, const string &file)
 {
-  try
+  csvstream csv(file);
+  map<string, string> row;
+  cout << "test data:\n";
+  int correct = 0, total = 0;
+
+  while (csv >> row)
   {
-    csvstream csv(file);
-    map<string, string> row;
-    cout << "test data:\n";
-    int correct = 0, total = 0;
-    while (csv >> row)
-    {
-      string lbl = row["tag"];
-      string txt = row["content"];
-      double score = 0.0;
-      string pred = clf.predict(txt, score);
-      ostringstream out;
-      out << fixed << setprecision(3) << score;
-      cout << "  correct = " << lbl << ", predicted = " << pred << ", log-probability score = " << out.str() << "\n";
-      cout << "  content = " << txt << "\n\n";
-      if (pred == lbl)
-        correct++;
-      total++;
-    }
-    cout << "performance: " << correct << " / " << total << " posts predicted correctly\n\n";
+    string lbl = row["tag"];
+    string txt = row["content"];
+    double score = 0.0;
+    string pred = clf.predict(txt, score);
+
+    ostringstream score1;
+    score1 << fixed << setprecision(1) << score;
+
+    cout << "  correct = " << lbl << ", predicted = " << pred
+         << ", log-probability score = " << score1.str() << "\n";
+    cout << "  content = " << txt << "\n\n";
+
+    if (pred == lbl)
+      correct++;
+    total++;
   }
-  catch (const csvstream_exception &e)
-  {
-    cout << "Error opening file: " << file << endl;
-  }
+  cout << "performance: " << correct << " / " << total
+       << " posts predicted correctly\n";
 }
 
 int main(int argc, char *argv[])
@@ -181,18 +184,29 @@ int main(int argc, char *argv[])
     cout << "Usage: classifier.exe TRAIN_FILE [TEST_FILE]\n";
     return 1;
   }
-  NBClassifier clf;
-  string train_file = argv[1];
-  clf.train(train_file);
-  if (argc == 2)
+
+  try
   {
-    clf.print_classes();
-    clf.print_params();
+    NBClassifier clf;
+    string train_file = argv[1];
+
+    if (argc == 2)
+    {
+      clf.train(train_file, true);
+      clf.print_classes();
+      clf.print_params();
+    }
+    else
+    {
+      clf.train(train_file, false);
+      string test_file = argv[2];
+      run_tests(clf, test_file);
+    }
   }
-  else
+  catch (const csvstream_exception &e)
   {
-    string test_file = argv[2];
-    run_tests(clf, test_file);
+    cout << "Error opening file: " << e.msg.substr(e.msg.find(": ") + 2) << "\n";
+    return 1;
   }
   return 0;
 }
