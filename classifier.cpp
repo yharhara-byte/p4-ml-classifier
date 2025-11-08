@@ -112,9 +112,9 @@ public:
     for (auto &lbl : labelCount)
     {
       const string &label = lbl.first;
-      double labelDocs = double(labelCount.at(label));
-      double score = log(labelDocs / double(total));
-      for (const string &w : bag)
+      double n_label = double(labelCount.at(label));
+      double score = log(n_label / double(total));
+      for (const string &w : vocab)
       {
         int hits = 0;
         auto itL = labelWordHits.find(label);
@@ -124,8 +124,11 @@ public:
           if (itW != itL->second.end())
             hits = itW->second;
         }
-        double p = (hits > 0) ? (hits / labelDocs) : (1.0 / (labelDocs + 2.0));
-        score += log(p);
+        double p = (hits > 0) ? (hits / n_label) : (1.0 / (n_label + 2.0));
+        if (bag.count(w))
+          score += log(p);
+        else
+          score += log(1.0 - p);
       }
       if (first || score > bestScore || (fabs(score - bestScore) < 1e-9 && label < best))
       {
@@ -150,6 +153,8 @@ static void run_tests(NBClassifier &clf, const string &file)
     string txt = row["content"];
     double score = 0.0;
     string pred = clf.predict(txt, score);
+    cout.setf(ios::fixed);
+    cout << setprecision(1);
     cout << "  correct = " << lbl << ", predicted = " << pred
          << ", log-probability score = " << score << "\n";
     cout << "  content = " << txt << "\n\n";
@@ -163,7 +168,6 @@ static void run_tests(NBClassifier &clf, const string &file)
 
 int main(int argc, char *argv[])
 {
-  cout.precision(3);
   if (argc != 2 && argc != 3)
   {
     cout << "Usage: classifier.exe TRAIN_FILE [TEST_FILE]\n";
@@ -188,7 +192,9 @@ int main(int argc, char *argv[])
   }
   catch (const csvstream_exception &e)
   {
-    cout << e.msg << "\n";
+    size_t k = e.msg.find(": ");
+    string tail = (k == string::npos) ? e.msg : e.msg.substr(k + 2);
+    cout << "Error opening file: " << tail << "\n";
     return 1;
   }
   return 0;
