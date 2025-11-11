@@ -105,9 +105,7 @@ public:
         int hits = wp.second;
 
         double n_label = double(labelCount.at(label));
-        double prob = (hits > 0)
-                      ? (hits / n_label)
-                      : (1.0 / (n_label + 2.0));
+        double prob = hits / n_label;
 
         double loglike = log(prob);
         ostringstream out;
@@ -146,17 +144,10 @@ public:
 
       auto itL = labelWordHits.find(label);
 
-      int totalWordHits = 0;
-      if (itL != labelWordHits.end())
-      {
-        for (auto &kv : itL->second)
-          totalWordHits += kv.second;
-      }
-
       double score =
-        log(double(labelCount.at(label)) / double(totalDocs));
+          log(double(labelCount.at(label)) / double(totalDocs));
 
-      for (const string &w : vocab)
+      for (const string &w : bag)
       {
         int hits = 0;
         if (itL != labelWordHits.end())
@@ -166,14 +157,21 @@ public:
             hits = itW->second;
         }
 
-        double denom =
-          double(totalWordHits) + double(vocab.size());
-        double p = (double(hits) + 1.0) / denom;
-
-        if (bag.count(w))
-          score += log(p);
+        double term;
+        if (!vocab.count(w))
+        {
+          term = log(1.0 / double(totalDocs));
+        }
+        else if (hits == 0)
+        {
+          term = log(double(wordHits.at(w)) / double(totalDocs));
+        }
         else
-          score += log(1.0 - p);
+        {
+          term = log(double(hits) / double(labelCount.at(label)));
+        }
+
+        score += term;
       }
 
       if (first)
@@ -183,7 +181,7 @@ public:
         first = false;
       }
       else if (score > bestScore ||
-              (fabs(score - bestScore) < 1e-9 && label < best))
+               (fabs(score - bestScore) < 1e-9 && label < best))
       {
         bestScore = score;
         best = label;
@@ -211,13 +209,27 @@ static void run_tests(NBClassifier &clf, const string &file)
     double score = 0.0;
     string pred = clf.predict(txt, score);
 
-    ostringstream s;
-    s << fixed << setprecision(1) << score;
+    string score_str;
+    if (fabs(score) >= 100.0)
+    {
+      long long r = llround(score);
+      score_str = to_string(r);
+    }
+    else
+    {
+      ostringstream s;
+      s << fixed << setprecision(1) << score;
+      score_str = s.str();
+      if (score_str.size() >= 2 && score_str.substr(score_str.size() - 2) == ".0")
+      {
+        score_str.erase(score_str.size() - 2);
+      }
+    }
 
     cout << "  correct = " << lbl
          << ", predicted = " << pred
          << ", log-probability score = "
-         << s.str() << "\n";
+         << score_str << "\n";
 
     cout << "  content = " << txt << "\n\n";
 
@@ -262,7 +274,7 @@ int main(int argc, char *argv[])
   {
     size_t pos = e.msg.find(": ");
     string tail =
-      (pos == string::npos) ? e.msg : e.msg.substr(pos + 2);
+        (pos == string::npos) ? e.msg : e.msg.substr(pos + 2);
 
     cout << "Error opening file: " << tail << "\n";
     return 1;
